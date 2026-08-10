@@ -80,7 +80,7 @@ class BiometricLockManager(private val activity: FragmentActivity) {
             .build()
 
         cancellationSignal = CancellationSignal()
-        prompt.authenticate(promptInfo, cancellationSignal)
+        prompt.authenticate(promptInfo)
     }
 
     fun cancel() {
