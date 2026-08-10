@@ -52,11 +52,19 @@ class RemoteServerSettings @Inject constructor(
     /**
      * Full WebSocket URL for [com.hermes.android.gateway.GatewayClient.connect],
      * or null when not configured.
+     *
+     * The stored base URL uses the web scheme (https/http — OkHttp requires
+     * it); here we map it back to the WS scheme for the actual socket.
      */
     fun webSocketUrl(): String? {
         val c = _config.value
         if (!c.isComplete) return null
-        return "${c.serverUrl}$WS_PATH?token=${c.token}"
+        val base = when {
+            c.serverUrl.startsWith("https://") -> "wss://" + c.serverUrl.removePrefix("https://")
+            c.serverUrl.startsWith("http://") -> "ws://" + c.serverUrl.removePrefix("http://")
+            else -> c.serverUrl
+        }
+        return "$base$WS_PATH?token=${c.token}"
     }
 
     private fun load(): RemoteServerConfig = RemoteServerConfig(
@@ -76,17 +84,22 @@ class RemoteServerSettings @Inject constructor(
          * - strips an accidentally-pasted `/api/ws...` suffix
          * - adds `wss://` when no scheme was given
          * - maps `https`/`http` to `wss`/`ws`
+         *
+         * NOTE: the value stored is the *web* scheme (https/http) because
+         * OkHttp's `Request.Builder().url()` only accepts http/https —
+         * it performs the WS upgrade itself. The WS scheme is derived in
+         * [webSocketUrl].
          */
         fun normalizeUrl(input: String): String {
             var url = input.trim().trimEnd('/')
             // User pasted the full WS URL — keep only the base.
             url = url.substringBefore(WS_PATH)
             url = when {
-                url.startsWith("wss://") || url.startsWith("ws://") -> url
-                url.startsWith("https://") -> "wss://" + url.removePrefix("https://")
-                url.startsWith("http://") -> "ws://" + url.removePrefix("http://")
+                url.startsWith("wss://") -> "https://" + url.removePrefix("wss://")
+                url.startsWith("ws://") -> "http://" + url.removePrefix("ws://")
+                url.startsWith("https://") || url.startsWith("http://") -> url
                 url.isEmpty() -> url
-                else -> "wss://$url"
+                else -> "https://$url"
             }
             return url.trimEnd('/')
         }
