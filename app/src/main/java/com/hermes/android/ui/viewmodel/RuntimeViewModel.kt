@@ -1,0 +1,321 @@
+package com.hermes.android.ui.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.core.content.ContextCompat
+import com.hermes.android.gateway.ConnectionState
+import com.hermes.android.gateway.GatewayClient
+import com.hermes.android.runtime.DetectionResult
+import com.hermes.android.runtime.HermesRuntimeManager
+import com.hermes.android.runtime.InstallResult
+import com.hermes.android.runtime.PrerequisiteResult
+import com.hermes.android.runtime.ProgressEmitter
+import com.hermes.android.runtime.RuntimeState
+import com.hermes.android.runtime.RuntimeType
+import com.hermes.android.runtime.remote.RemoteServerConfig
+import com.hermes.android.runtime.remote.RemoteServerSettings
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import timber.log.Timber
+import javax.inject.Inject
+
+/** One-shot side-effects emitted by [RuntimeViewModel] for the UI to handle. */
+sealed interface RuntimeEffect {
+    /** Start the foreground gateway service. */
+    data object StartForegroundService : RuntimeEffect
+}
+
+/**
+ * ViewModel for the Runtime Setup screen.
+ *
+ * Depends ONLY on [HermesRuntimeManager] — never on any concrete runtime
+ * implementation. This is the abstraction boundary: if we later swap
+ * implementations, this file does not change.
+ *
+ * The UI observes [uiState] (a [RuntimeUiState]) — NOT the raw
+ * [com.hermes.android.runtime.RuntimeState]. This keeps the UI decoupled
+ * from the runtime layer's internal representation (Phase 1.5 Rule 1).
+ *
+ * Reference: ADR-002 (Native Compose), ADR-009 (production embedded Python),
+ *            Phase 1.5 Rule 1 (Strict Layer Dependency)
+ */
+@HiltViewModel
+class RuntimeViewModel @Inject constructor(
+    private val runtimeManager: HermesRuntimeManager,
+    private val remoteServerSettings: RemoteServerSettings,
+    gatewayClient: GatewayClient,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
+) : ViewModel() {
+
+    /** True when the bound runtime is the remote-server runtime. */
+    val isRemoteRuntime: Boolean get() = runtimeManager.runtimeType == RuntimeType.REMOTE
+
+    /**
+     * Live gateway connection state for the setup screen's status chip,
+     * mapped to the UI-facing type ([GatewayConnectionUi]) so the screen
+     * never imports from the gateway package (Phase 1.5 Rule 1). Carries
+     * the human-readable detail (failure reason / reconnect attempt) so
+     * errors surface with their real cause instead of a generic message.
+     */
+    val connectionState: StateFlow<GatewayConnectionUi> = gatewayClient.connectionState
+        .map { state ->
+            when (state) {
+                is ConnectionState.Connected -> GatewayConnectionUi(ChatConnectionState.Connected)
+                is ConnectionState.Connecting -> GatewayConnectionUi(ChatConnectionState.Connecting)
+                is ConnectionState.Reconnecting -> GatewayConnectionUi(
+                    ChatConnectionState.Reconnecting,
+                    detail = state.lastError,
+                    reconnectAttempt = state.attempt,
+                )
+                is ConnectionState.Failed -> GatewayConnectionUi(
+                    ChatConnectionState.Failed,
+                    detail = state.reason,
+                )
+                is ConnectionState.Disconnected -> GatewayConnectionUi(ChatConnectionState.Disconnected)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, GatewayConnectionUi(ChatConnectionState.Disconnected))
+
+    /** Current remote-server connection settings (URL + token). */
+    val serverConfig: kotlinx.coroutines.flow.StateFlow<RemoteServerConfig> =
+        remoteServerSettings.config
+
+    /**
+     * Persist the server address + token, then immediately re-detect and
+     * connect. This is the "Save & Connect" action in the setup screen.
+     */
+    fun saveServerConfigAndConnect(serverUrl: String, token: String) {
+        viewModelScope.launch {
+            _errorMessage.value = null
+            try {
+                remoteServerSettings.save(serverUrl, token)
+                val result = runtimeManager.runtime.detect()
+                if (result is DetectionResult.Available) {
+                    val handle = runtimeManager.runtime.startGateway()
+                    Timber.i("[Runtime] Connected to remote server: ${handle.webSocketUrl.substringBefore("?token=")}")
+                    _effects.emit(RuntimeEffect.StartForegroundService)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "[Runtime] Failed to connect to remote server")
+                _errorMessage.value = e.message ?: "Failed to connect to the server"
+            }
+        }
+    }
+
+    /**
+     * UI-facing state — converted from the runtime's RuntimeState.
+     * The UI observes THIS, not the raw runtime state.
+     */
+    private val _uiState = MutableStateFlow<RuntimeUiState>(RuntimeUiState.NotDetected)
+    val uiState: StateFlow<RuntimeUiState> = _uiState.asStateFlow()
+
+    private val _installProgress = MutableStateFlow<InstallProgressUi?>(null)
+    val installProgress: StateFlow<InstallProgressUi?> = _installProgress.asStateFlow()
+
+    private val _installInstructions = MutableStateFlow<InstallInstructionsUi?>(null)
+    val installInstructions: StateFlow<InstallInstructionsUi?> = _installInstructions.asStateFlow()
+
+    private val _installing = MutableStateFlow(false)
+    val installing: StateFlow<Boolean> = _installing.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    private val _logs = MutableStateFlow<String?>(null)
+    val logs: StateFlow<String?> = _logs.asStateFlow()
+
+    private val _effects = MutableSharedFlow<RuntimeEffect>(extraBufferCapacity = 1)
+    val effects: SharedFlow<RuntimeEffect> = _effects.asSharedFlow()
+
+    private val logReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
+            if (intent.action == "com.hermes.android.LOG_UPDATE") {
+                val logContent = intent.getStringExtra("logs")
+                _logs.value = logContent
+                Timber.i("[RuntimeViewModel] Logs updated via broadcast")
+            }
+        }
+    }
+
+    init {
+        // Register log receiver
+        val filter = android.content.IntentFilter("com.hermes.android.LOG_UPDATE")
+        ContextCompat.registerReceiver(context, logReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
+
+        // Bridge runtime state → UI state
+        viewModelScope.launch {
+            runtimeManager.state.collect { runtimeState ->
+                _uiState.value = mapToUiState(runtimeState)
+            }
+        }
+        viewModelScope.launch {
+            runtimeManager.installProgress.collect { progress ->
+                _installProgress.value = progress?.let {
+                    InstallProgressUi(
+                        stage = it.stage,
+                        message = it.message,
+                        percent = it.percent,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun mapToUiState(runtimeState: RuntimeState): RuntimeUiState {
+        return when (runtimeState) {
+            is RuntimeState.NotDetected -> RuntimeUiState.NotDetected
+            is RuntimeState.Detecting -> RuntimeUiState.Detecting
+            is RuntimeState.Detected -> RuntimeUiState.Detected(
+                version = runtimeState.info.version,
+                diskFreeBytes = runtimeState.info.diskFreeBytes,
+            )
+            is RuntimeState.Installing -> RuntimeUiState.Installing
+            is RuntimeState.Installed -> RuntimeUiState.Installed(
+                hermesVersion = runtimeState.info.hermesVersion,
+            )
+            is RuntimeState.Running -> RuntimeUiState.Running(
+                webSocketUrl = runtimeState.gateway.webSocketUrl,
+            )
+            is RuntimeState.Error -> RuntimeUiState.Error(runtimeState.message)
+        }
+    }
+
+    fun detect() {
+        viewModelScope.launch {
+            _errorMessage.value = null
+            try {
+                val result = runtimeManager.runtime.detect()
+                if (result is DetectionResult.Missing) {
+                    Timber.i("[Runtime] Runtime missing: ${result.title}")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "[Runtime] Detection failed")
+                _errorMessage.value = e.message ?: "Detection failed"
+            }
+        }
+    }
+
+    fun startInstall() {
+        viewModelScope.launch {
+            _errorMessage.value = null
+
+            // Preflight gate: verify every prerequisite (Termux installed,
+            // allow-external-apps enabled, enough storage) BEFORE starting, so
+            // the install can't die halfway on a missing precondition. Show the
+            // fix instead of a corrupted partial install.
+            when (val prereq = runtimeManager.runtime.checkInstallPrerequisites()) {
+                is PrerequisiteResult.Blocked -> {
+                    _errorMessage.value = "${prereq.title}\n\n${prereq.instructions}"
+                    return@launch
+                }
+                PrerequisiteResult.Ready -> Unit
+            }
+
+            _installing.value = true
+
+            val emitter = ProgressEmitter { progress ->
+                Timber.d("[Runtime] Progress: ${progress.stage} — ${progress.message}")
+            }
+
+            try {
+                val result = runtimeManager.runtime.install(emitter)
+                when (result) {
+                    is InstallResult.Success -> Timber.i("[Runtime] Install succeeded")
+                    is InstallResult.Failure -> {
+                        Timber.e("[Runtime] Install failed: ${result.reason}")
+                        _errorMessage.value = result.reason
+                    }
+                    InstallResult.Cancelled -> Timber.w("[Runtime] Install cancelled")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "[Runtime] Install threw exception")
+                _errorMessage.value = e.message ?: "Install failed"
+            } finally {
+                _installing.value = false
+            }
+        }
+    }
+
+    fun startGateway() {
+        viewModelScope.launch {
+            _errorMessage.value = null
+            try {
+                val handle = runtimeManager.runtime.startGateway()
+                Timber.i("[Runtime] Gateway started: ${handle.webSocketUrl.substringBefore("?token=")}")
+                _effects.emit(RuntimeEffect.StartForegroundService)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "[Runtime] Failed to start gateway")
+                _errorMessage.value = e.message ?: "Failed to start gateway in Termux"
+            }
+        }
+    }
+
+    fun prepareInstallInstructions() {
+        val instructions = runtimeManager.runtime.getInstallInstructions()
+        if (instructions != null) {
+            _installInstructions.value = InstallInstructionsUi(
+                title = instructions.title,
+                steps = instructions.steps,
+                command = instructions.command,
+            )
+        } else {
+            _errorMessage.value = "This runtime does not require user-side installation."
+        }
+    }
+
+    fun launchHostApp() {
+        val launched = runtimeManager.runtime.launchHostApp()
+        if (!launched) {
+            _errorMessage.value = "Could not launch the runtime host application."
+        }
+    }
+
+    fun fetchLogs() {
+        viewModelScope.launch {
+            _errorMessage.value = null
+            try {
+                _logs.value = "Fetching logs from Termux (saving to /sdcard/Download/hermes_logs.txt)..."
+                runtimeManager.runtime.fetchLogs()
+            } catch (e: Exception) {
+                Timber.e(e, "[Runtime] Failed to fetch logs")
+                _errorMessage.value = e.message ?: "Failed to fetch logs"
+            }
+        }
+    }
+
+    fun runDoctor() {
+        viewModelScope.launch {
+            _errorMessage.value = null
+            try {
+                _logs.value = "Running hermes doctor inside Termux…"
+                _logs.value = runtimeManager.runtime.runDoctor()
+            } catch (e: Exception) {
+                Timber.e(e, "[Runtime] Failed to run doctor")
+                _errorMessage.value = e.message ?: "Failed to run doctor"
+            }
+        }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        try { context.unregisterReceiver(logReceiver) } catch (e: Exception) { Timber.w(e, "[Runtime] Failed to unregister log receiver") }
+    }
+}
