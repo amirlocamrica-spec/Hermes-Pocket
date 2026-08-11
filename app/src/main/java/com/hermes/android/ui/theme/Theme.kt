@@ -41,7 +41,8 @@ enum class ColorTheme(val key: String, val displayEn: String, val displayFa: Str
     CLAUDE("claude", "Mocha", "موکا"),
     MIDNIGHT("midnight", "Midnight", "میدنایت"),
     INDIGO_PRO("indigo_pro", "Indigo", "ایندیگو"),
-    CARBON("carbon", "Carbon", "کربن");
+    CARBON("carbon", "Carbon", "کربن"),
+    NEURO("neuro", "Neuro", "نورو");
 
     companion object {
         // Carbon (near-black + neutral grey, no purple) is the default —
@@ -501,6 +502,62 @@ private val ClaudeDarkColors = darkColorScheme(
     outlineVariant = claude_dark_outlineVariant,
 )
 
+// ── Neuro palette — glowing brain + chrome wings ──
+
+private val NeuroLightColors = lightColorScheme(
+    primary = neuro_light_primary,
+    onPrimary = neuro_light_onPrimary,
+    primaryContainer = neuro_light_primaryContainer,
+    onPrimaryContainer = neuro_light_onPrimaryContainer,
+    secondary = neuro_light_secondary,
+    onSecondary = neuro_light_onSecondary,
+    secondaryContainer = neuro_light_secondaryContainer,
+    onSecondaryContainer = neuro_light_onSecondaryContainer,
+    tertiary = neuro_light_tertiary,
+    onTertiary = neuro_light_onTertiary,
+    tertiaryContainer = neuro_light_tertiaryContainer,
+    onTertiaryContainer = neuro_light_onTertiaryContainer,
+    error = neuro_light_error,
+    onError = neuro_light_onError,
+    errorContainer = neuro_light_errorContainer,
+    onErrorContainer = neuro_light_onErrorContainer,
+    background = neuro_light_background,
+    onBackground = neuro_light_onBackground,
+    surface = neuro_light_surface,
+    onSurface = neuro_light_onSurface,
+    surfaceVariant = neuro_light_surfaceVariant,
+    onSurfaceVariant = neuro_light_onSurfaceVariant,
+    outline = neuro_light_outline,
+    outlineVariant = neuro_light_outlineVariant,
+)
+
+private val NeuroDarkColors = darkColorScheme(
+    primary = neuro_dark_primary,
+    onPrimary = neuro_dark_onPrimary,
+    primaryContainer = neuro_dark_primaryContainer,
+    onPrimaryContainer = neuro_dark_onPrimaryContainer,
+    secondary = neuro_dark_secondary,
+    onSecondary = neuro_dark_onSecondary,
+    secondaryContainer = neuro_dark_secondaryContainer,
+    onSecondaryContainer = neuro_dark_onSecondaryContainer,
+    tertiary = neuro_dark_tertiary,
+    onTertiary = neuro_dark_onTertiary,
+    tertiaryContainer = neuro_dark_tertiaryContainer,
+    onTertiaryContainer = neuro_dark_onTertiaryContainer,
+    error = neuro_dark_error,
+    onError = neuro_dark_onError,
+    errorContainer = neuro_dark_errorContainer,
+    onErrorContainer = neuro_dark_onErrorContainer,
+    background = neuro_dark_background,
+    onBackground = neuro_dark_onBackground,
+    surface = neuro_dark_surface,
+    onSurface = neuro_dark_onSurface,
+    surfaceVariant = neuro_dark_surfaceVariant,
+    onSurfaceVariant = neuro_dark_onSurfaceVariant,
+    outline = neuro_dark_outline,
+    outlineVariant = neuro_dark_outlineVariant,
+)
+
 @Composable
 fun Hermes2Theme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -530,6 +587,7 @@ fun Hermes2Theme(
             ColorTheme.MIDNIGHT -> if (useDark) MidnightDarkColors else MidnightLightColors
             ColorTheme.INDIGO_PRO -> if (useDark) IndigoDarkColors else IndigoLightColors
             ColorTheme.CARBON -> if (useDark) CarbonDarkColors else CarbonLightColors
+            ColorTheme.NEURO -> if (useDark) NeuroDarkColors else NeuroLightColors
         }
     }
 
