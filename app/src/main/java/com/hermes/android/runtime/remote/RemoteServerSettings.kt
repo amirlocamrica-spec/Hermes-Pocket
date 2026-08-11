@@ -64,7 +64,11 @@ class RemoteServerSettings @Inject constructor(
             c.serverUrl.startsWith("http://") -> "ws://" + c.serverUrl.removePrefix("http://")
             else -> c.serverUrl
         }
-        return "$base$WS_PATH?token=${c.token}"
+        // Token is base64-ish and may contain + / = characters which are
+        // reserved/ambiguous in query strings — encode it so the server
+        // receives the exact bytes (unencoded tokens caused HTTP 401).
+        val encodedToken = android.net.Uri.encode(c.token, "")
+        return "$base$WS_PATH?token=$encodedToken"
     }
 
     private fun load(): RemoteServerConfig = RemoteServerConfig(
@@ -99,7 +103,13 @@ class RemoteServerSettings @Inject constructor(
                 url.startsWith("ws://") -> "http://" + url.removePrefix("ws://")
                 url.startsWith("https://") || url.startsWith("http://") -> url
                 url.isEmpty() -> url
-                else -> "https://$url"
+                // Default to http:// (not https://): the common remote-server
+                // case here is a Railway TCP proxy or a plain http endpoint,
+                // which has NO TLS termination — assuming https:// forces
+                // wss:// downstream and the TLS handshake fails. Users who run
+                // a real TLS front (cloudflare/https domain) enter https://
+                // explicitly.
+                else -> "http://$url"
             }
             return url.trimEnd('/')
         }

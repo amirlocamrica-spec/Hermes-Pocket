@@ -202,7 +202,15 @@ class OkHttpGatewayClient @Inject constructor(
             }
             oldSocket?.close(1000, "reconnecting")
 
-            val request = Request.Builder().url(url).build()
+            // Build the request WITHOUT any Origin header: the Hermes
+            // dashboard rejects WS upgrades that carry an Origin (403),
+            // and OkHttp never adds one on its own — but explicitly
+            // stripping it here makes the request robust against any
+            // interceptor/layer that might inject one.
+            val request = Request.Builder()
+                .url(url)
+                .removeHeader("Origin")
+                .build()
             val listener = GatewayWebSocketListener { state ->
                 when (state) {
                     is WsState.Opened -> {
