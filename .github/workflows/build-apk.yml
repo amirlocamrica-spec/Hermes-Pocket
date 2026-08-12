@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, v3-rewrite ]
   workflow_dispatch:
 
 jobs:
@@ -27,11 +27,22 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      - name: Restore keystore from secret
+        run: |
+          echo "${{ secrets.KEYSTORE_FILE }}" > keystore.jks.base64
+          base64 -d keystore.jks.base64 > keystore.jks
+          ls -la keystore.jks
+
+      - name: Build signed release APK
+        run: ./gradlew assembleRelease --no-daemon
+        env:
+          KEYSTORE_FILE: ${{ github.workspace }}/keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hermes-pocket-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: hermes-pocket-signed
+          path: app/build/outputs/apk/release/*.apk
