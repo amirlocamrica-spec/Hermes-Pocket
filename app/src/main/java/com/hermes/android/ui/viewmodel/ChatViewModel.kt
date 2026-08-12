@@ -9,6 +9,7 @@ import com.hermes.android.gateway.GatewayClient
 import com.hermes.android.gateway.GatewayEvent
 import com.hermes.android.gateway.GatewayMethods
 import com.hermes.android.gateway.GatewayException
+import com.hermes.android.gateway.GatewayQueuedException
 import com.hermes.android.service.ApprovalNotificationManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -395,6 +396,11 @@ class ChatViewModel @Inject constructor(
                     method = GatewayMethods.PROMPT_SUBMIT,
                     params = jsonToElementMap(params),
                 )
+            } catch (queued: GatewayQueuedException) {
+                // Phase 1 v3 (outbox): the prompt was persisted and will replay
+                // automatically once connected — show "queued", not an error.
+                Timber.i("[Chat] prompt queued for retry (${queued.method})")
+                _uiState.update { it.copy(isSending = false) }
             } catch (e: Exception) {
                 Timber.e(e, "[Chat] Failed to send prompt")
                 _uiState.update { it.copy(

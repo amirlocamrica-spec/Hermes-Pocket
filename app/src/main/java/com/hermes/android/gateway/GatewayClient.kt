@@ -138,3 +138,12 @@ interface GatewayClient {
  * Thrown when an RPC request fails (error response, timeout, or not connected).
  */
 class GatewayException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * Signals that the request could not be sent now but was persisted and will
+ * be replayed automatically once the gateway is reachable again.
+ *
+ * Distinct from [GatewayException] on purpose: the UI must show "queued —
+ * will send when reconnected", not a failure.
+ */
+class GatewayQueuedException(val method: String) : Exception("Queued for retry: $method")

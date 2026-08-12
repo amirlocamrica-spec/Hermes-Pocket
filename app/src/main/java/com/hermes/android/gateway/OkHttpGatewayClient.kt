@@ -55,6 +55,7 @@ import kotlin.math.min
 class OkHttpGatewayClient @Inject constructor(
     private val httpClient: OkHttpClient,
     private val json: Json,
+    private val outbox: Outbox,
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : GatewayClient {
 
@@ -99,13 +100,26 @@ class OkHttpGatewayClient @Inject constructor(
     @Volatile
     private var lastHttpError: Int? = null
 
-    /** Timestamp of the first failure in the current reconnect window. */
-    @Volatile
-    private var firstFailureAt: Long? = null
-
     /** Whether the last error was permanent (401/403/404). */
     @Volatile
     private var lastErrorPermanent: Boolean = false
+
+    // ── Heartbeat (Phase 1 v3 — application-level liveness) ───────────────
+    // OkHttp's pingInterval only proves the SOCKET is alive — any proxy or
+    // the server's own websocket layer can answer a protocol ping while the
+    // Hermes gateway process behind it is frozen or dead. This sends a real
+    // RPC that only the gateway itself can answer.
+    @Volatile
+    private var lastInboundAtMs: Long = 0L
+    @Volatile
+    private var heartbeatJob: Job? = null
+
+    // ── Event-id resume tracking (Phase 1 v3) ─────────────────────────────
+    /** Last event sequence number seen, per session — used for resume + dedupe. */
+    private val lastEventIdBySession = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    @Volatile
+    private var flushJob: Job? = null
 
     /** Request ids whose responses must NOT update [lastSessionId] (see
      *  GatewayClient.request's trackSession param). */
@@ -125,8 +139,7 @@ class OkHttpGatewayClient @Inject constructor(
         }
 
         currentUrl = url
-        // Reset the failure window on manual retry
-        firstFailureAt = null
+        // Reset failure state on manual retry
         lastErrorPermanent = false
         if (_connectionState.value !is ConnectionState.Reconnecting) {
             _connectionState.value = ConnectionState.Connecting
@@ -220,6 +233,11 @@ class OkHttpGatewayClient @Inject constructor(
                         if (!deferred.isCompleted) {
                             _connectionState.value = ConnectionState.Connected(state.sessionId)
                             deferred.complete(_connectionState.value)
+                            // Phase 1 v3: once Connected, arm the application-level
+                            // heartbeat (passive-first; probes only in silence).
+                            startHeartbeat()
+                            // Phase 1 v3: replay anything queued while offline.
+                            flushOutbox()
                             // Session resume on reconnect. Capture into a local so
                             // a concurrent write to lastSessionId can't null it out
                             // between the check and the resume call.
@@ -277,6 +295,7 @@ class OkHttpGatewayClient @Inject constructor(
     }
 
     override suspend fun disconnect() {
+        stopHeartbeat()
         val ws = synchronized(this) {
             reconnectJob?.cancel()
             // Setting Disconnected FIRST makes any in-flight dial's success moot;
@@ -316,6 +335,14 @@ class OkHttpGatewayClient @Inject constructor(
             val url = currentUrl ?: throw GatewayException("Not connected (state: $state)")
             state = connect(url)
             if (state !is ConnectionState.Connected) {
+                // Phase 1 v3 (outbox): user work must not be silently lost when
+                // offline. Queueable methods (prompt.submit, approval/clarify/
+                // secret responses, session.steer) are persisted and replayed
+                // on reconnect. Everything else fails fast.
+                if (method in Outbox.QUEUEABLE_METHODS) {
+                    outbox.enqueue(method, params, lastSessionId)
+                    throw GatewayQueuedException(method)
+                }
                 throw GatewayException("Not connected (state: $state)")
             }
         }
@@ -387,26 +414,23 @@ class OkHttpGatewayClient @Inject constructor(
                 throw GatewayException("Download failed: HTTP ${response.code}")
             }
             val body = response.body ?: throw GatewayException("Download failed: empty response")
-            // Stream to a temp file to avoid OOM on large files
-            val tempFile = java.io.File.createTempFile("download", ".tmp")
-            try {
-                body.source().use { source ->
-                    tempFile.outputStream().use { output ->
-                        val buffer = ByteArray(8192)
-                        var bytesRead: Long = 0
-                        while (true) {
-                            val read = source.read(buffer)
-                            if (read == -1) break
-                            output.write(buffer, 0, read)
-                            bytesRead += read
-                        }
-                        Timber.d("[Gateway] Downloaded $bytesRead bytes to ${tempFile.absolutePath}")
-                    }
+            // Stream into a byte buffer. (Phase 1 v3: the previous temp-file +
+            // readBytes() round-trip loaded the whole file into memory anyway —
+            // the file was pointless. Callers needing disk-backed downloads
+            // should switch to a File-returning variant; for chat media this
+            // stays in memory as before but without the useless temp file.)
+            body.source().use { source ->
+                val buffer = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(8192)
+                var bytesRead: Long = 0
+                while (true) {
+                    val read = source.read(chunk)
+                    if (read == -1) break
+                    buffer.write(chunk, 0, read)
+                    bytesRead += read
                 }
-                // Read the file back into memory (caller expects ByteArray)
-                tempFile.readBytes()
-            } finally {
-                tempFile.delete()
+                Timber.d("[Gateway] Downloaded $bytesRead bytes")
+                buffer.toByteArray()
             }
         }
     }
@@ -466,16 +490,10 @@ class OkHttpGatewayClient @Inject constructor(
         var attempt = 0
         var lastReason: String? = null
         
-        // Initialize the failure window on first entry
-        if (firstFailureAt == null) {
-            firstFailureAt = System.currentTimeMillis()
-        }
-        
         while (true) {
             when (_connectionState.value) {
                 is ConnectionState.Connected -> {
-                    // Success — reset the failure window
-                    firstFailureAt = null
+                    // Success — reset permanent-error flag
                     lastErrorPermanent = false
                     return
                 }
@@ -486,15 +504,6 @@ class OkHttpGatewayClient @Inject constructor(
             // Check for permanent error (401/403/404)
             if (lastErrorPermanent) {
                 val reason = "Permanent error: HTTP ${lastHttpError ?: "unknown"}"
-                Timber.e("[Gateway] $reason — stopping reconnect")
-                _connectionState.value = ConnectionState.Failed(reason)
-                return
-            }
-            
-            // Check if we've exceeded the reconnect window
-            val elapsed = System.currentTimeMillis() - (firstFailureAt ?: System.currentTimeMillis())
-            if (elapsed > MAX_RECONNECT_WINDOW_MS) {
-                val reason = "Reconnect timeout after ${elapsed / 1000}s (last: $lastReason)"
                 Timber.e("[Gateway] $reason — stopping reconnect")
                 _connectionState.value = ConnectionState.Failed(reason)
                 return
@@ -527,7 +536,6 @@ class OkHttpGatewayClient @Inject constructor(
                 when (val result = startDial(url).await()) {
                     is ConnectionState.Connected -> {
                         Timber.i("[Gateway] reconnected on attempt $attempt")
-                        firstFailureAt = null
                         lastErrorPermanent = false
                         return
                     }
@@ -557,8 +565,7 @@ class OkHttpGatewayClient @Inject constructor(
                     val state = _connectionState.value
                     if (state is ConnectionState.Connected || state is ConnectionState.Disconnected) return
                     Timber.i("[Gateway] network available — dialing immediately")
-                    // Reset the failure window when network comes back
-                    firstFailureAt = null
+                    // Reset the permanent-error flag when network comes back
                     lastErrorPermanent = false
                     startDial(url)
                     scheduleReconnect() // safety net if this dial fails
@@ -586,7 +593,14 @@ class OkHttpGatewayClient @Inject constructor(
      */
     private suspend fun resumeSession(sessionId: String) {
         try {
-            val params = buildJsonObject { put("session_id", sessionId) }
+            val lastEventId = lastEventIdBySession[sessionId]
+            val params = buildJsonObject {
+                put("session_id", sessionId)
+                if (lastEventId != null) {
+                    // Older server builds ignore this field — harmless.
+                    put("last_event_id", lastEventId)
+                }
+            }
             // lastSessionId is a LIVE id (that's what responses/events carry),
             // but session.resume resolves STORED db ids and 4007s on live ones
             // — so this auto-resume was silently failing every time. Attach to
@@ -600,9 +614,22 @@ class OkHttpGatewayClient @Inject constructor(
             }
             val liveId = (result as? JsonObject)?.get("session_id")?.jsonPrimitive?.content
                 ?.takeIf { it.isNotBlank() } ?: sessionId
+
+            // Carry the event counter to the new live id so dedupe keeps
+            // working after a session-id change.
+            if (liveId != sessionId) {
+                lastEventIdBySession.remove(sessionId)?.let { lastEventIdBySession[liveId] = it }
+            }
+
             lastSessionId = liveId
-            Timber.i("[Gateway] session resumed: $sessionId -> live $liveId")
-            _connectionState.value = ConnectionState.Connected(liveId)
+            Timber.i("[Gateway] session resumed: $sessionId -> live $liveId (from event $lastEventId)")
+            // Only re-publish Connected if the socket is genuinely still alive —
+            // a late resume callback must not stamp Connected over a dead pipe.
+            synchronized(this) {
+                if (webSocket != null && _connectionState.value is ConnectionState.Connected) {
+                    _connectionState.value = ConnectionState.Connected(liveId)
+                }
+            }
         } catch (e: Exception) {
             Timber.w("[Gateway] session resume failed, creating new: ${e.message}")
             lastSessionId = null
@@ -613,9 +640,54 @@ class OkHttpGatewayClient @Inject constructor(
     private fun jsonToElementMap(obj: JsonObject): Map<String, JsonElement> =
         obj.toMap()
 
+    // ── Outbox flush (Phase 1 v3) ─────────────────────────────────────────
+
+    /**
+     * Replays queued user intent after the connection comes back.
+     *
+     * Ordering matters: entries go out oldest-first and strictly sequentially,
+     * because a prompt queued before an approval response must not overtake it.
+     */
+    private suspend fun flushOutbox() {
+        synchronized(this) {
+            if (flushJob?.isActive == true) return
+        }
+        val job = scope.launch {
+            val entries = runCatching { outbox.pending() }.getOrElse {
+                Timber.e(it, "[Outbox] could not read queue")
+                return@launch
+            }
+            if (entries.isEmpty()) return@launch
+
+            Timber.i("[Outbox] flushing ${entries.size} queued request(s)")
+            for (entry in entries) {
+                if (_connectionState.value !is ConnectionState.Connected) {
+                    Timber.w("[Outbox] connection lost mid-flush — stopping")
+                    break
+                }
+                try {
+                    request(
+                        method = entry.method,
+                        params = outbox.decodeParams(entry),
+                        // Queued sessions must not move the auto-resume target
+                        trackSession = false,
+                    )
+                    outbox.markSent(entry.id)
+                    Timber.i("[Outbox] sent ${entry.method} (id=${entry.id})")
+                } catch (ce: kotlinx.coroutines.CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    Timber.w("[Outbox] replay failed for id=${entry.id}: ${e.message}")
+                    outbox.markFailed(entry.id, e.message)
+                    break // network is likely down again; keep the rest
+                }
+            }
+        }
+        synchronized(this) { flushJob = job }
+    }
+
     // ── WebSocket listener ─────────────────────────────────────────────────
 
-    private enum class WsStateKind { OPENED, READY, CLOSED, FAILURE }
     private sealed class WsState {
         object Opened : WsState()
         data class Ready(val sessionId: String?) : WsState()
@@ -651,11 +723,13 @@ class OkHttpGatewayClient @Inject constructor(
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             if (!isCurrent(webSocket)) return
+            markInboundActivity()
             handleMessage(text, onState)
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
             if (!isCurrent(webSocket)) return
+            markInboundActivity()
             handleMessage(bytes.utf8(), onState)
         }
 
@@ -747,6 +821,13 @@ class OkHttpGatewayClient @Inject constructor(
         val sid = (params["sid"] ?: params["session_id"])?.jsonPrimitive?.content
         val payload = params["payload"]?.jsonObject ?: JsonObject(emptyMap())
 
+        // Phase 1 v3: inbound traffic proves the socket AND the gateway process
+        // are alive — the passive half of the heartbeat.
+        markInboundActivity()
+        // Phase 1 v3: drop replayed events after reconnect (dedupe) BEFORE
+        // emitting, so the UI never renders the same token twice.
+        if (recordEventId(sid, params, payload)) return
+
         val event = parseEvent(eventType, sid, payload)
         if (event is GatewayEvent.GatewayReady) {
             // gateway.ready is the transport-level handshake that connect()
@@ -759,9 +840,11 @@ class OkHttpGatewayClient @Inject constructor(
             if (event.sessionId != null) {
                 lastSessionId = event.sessionId
             }
-        } else if (event.sessionId != null) {
-            lastSessionId = event.sessionId
         }
+        // Phase 1 v3 (bug fix): background-session events (Task Desk tasks)
+        // must NOT steal the auto-resume target. lastSessionId is only ever
+        // updated from session-tracking RPC responses (handleResponse) and
+        // gateway.ready above — never from arbitrary event sessions.
         if (!_events.tryEmit(event)) {
             Timber.w("[Gateway] Event buffer full, dropped: $eventType")
         }
@@ -908,45 +991,140 @@ class OkHttpGatewayClient @Inject constructor(
         }
     }
 
-    private fun parseSkinMap(element: JsonElement): Map<String, String> {
-        return try {
-            element.jsonObject.toMap().mapValues { it.value.jsonPrimitive.content }
-        } catch (e: Exception) {
-            emptyMap()
+    // ── Heartbeat (Phase 1 v3) ────────────────────────────────────────────
+
+    private fun markInboundActivity() {
+        lastInboundAtMs = System.currentTimeMillis()
+    }
+
+    /**
+     * Application-level liveness probe.
+     *
+     * Passive-first: a probe is sent ONLY after a quiet period, so an active
+     * chat costs nothing. Uses CONFIG_GET — a cheap RPC only a live gateway
+     * process can answer (a proxy or the websocket layer alone cannot).
+     */
+    private fun startHeartbeat() {
+        synchronized(this) {
+            if (heartbeatJob?.isActive == true) return
+            markInboundActivity()
+            heartbeatJob = scope.launch { heartbeatLoop() }
+        }
+    }
+
+    private fun stopHeartbeat() {
+        synchronized(this) {
+            heartbeatJob?.cancel()
+            heartbeatJob = null
+        }
+    }
+
+    private suspend fun heartbeatLoop() {
+        var consecutiveMisses = 0
+        while (true) {
+            delay(HEARTBEAT_CHECK_INTERVAL_MS)
+            if (_connectionState.value !is ConnectionState.Connected) {
+                consecutiveMisses = 0
+                continue
+            }
+            val idleMs = System.currentTimeMillis() - lastInboundAtMs
+            if (idleMs < HEARTBEAT_IDLE_THRESHOLD_MS) {
+                consecutiveMisses = 0
+                continue
+            }
+            val socket = webSocket
+            if (socket == null) {
+                handleDisconnect("heartbeat: socket vanished")
+                consecutiveMisses = 0
+                continue
+            }
+            val alive = sendHeartbeatProbe(socket)
+            if (alive) {
+                consecutiveMisses = 0
+            } else {
+                consecutiveMisses++
+                Timber.w("[Gateway] heartbeat miss $consecutiveMisses/${HEARTBEAT_MAX_MISSES}")
+                if (consecutiveMisses >= HEARTBEAT_MAX_MISSES) {
+                    Timber.w("[Gateway] zombie socket detected — forcing reconnect")
+                    consecutiveMisses = 0
+                    // Deliberately close: onFailure/onClosed won't fire because
+                    // from TCP's view the socket is alive. We close the cycle
+                    // ourselves.
+                    runCatching { socket.close(1000, "heartbeat timeout") }
+                    handleDisconnect("heartbeat timeout")
+                }
+            }
         }
     }
 
     /**
-     * Mirrors `parseTodos` in `ui-tui/src/app/turnController.ts`: drop items
-     * without a known status or with empty id/content instead of failing the
-     * whole event.
+     * Sends the probe directly on the socket instead of going through
+     * request(), because request() would trigger dial-on-demand and recursion
+     * while we are the ones deciding whether the connection is usable at all.
      */
-    private fun parseTodos(element: JsonElement): List<GatewayEvent.TodoItem>? {
-        val array = element as? kotlinx.serialization.json.JsonArray ?: return null
-        val validStatuses = setOf("pending", "in_progress", "completed", "cancelled")
-        return array.mapNotNull { item ->
-            val obj = item as? JsonObject ?: return@mapNotNull null
-            val status = obj["status"]?.jsonPrimitive?.content ?: return@mapNotNull null
-            if (status !in validStatuses) return@mapNotNull null
-            val id = obj["id"]?.jsonPrimitive?.content?.trim().orEmpty()
-            val content = obj["content"]?.jsonPrimitive?.content?.trim().orEmpty()
-            if (id.isEmpty() || content.isEmpty()) return@mapNotNull null
-            GatewayEvent.TodoItem(id = id, content = content, status = status)
+    private suspend fun sendHeartbeatProbe(socket: WebSocket): Boolean {
+        val id = nextRequestId.getAndIncrement()
+        nonTrackingRequestIds.add(id)
+        val probe = GatewayRequest(
+            id = id,
+            method = GatewayMethods.CONFIG_GET,
+            params = mapOf("key" to kotlinx.serialization.json.JsonPrimitive("__heartbeat__")),
+        )
+        val deferred = kotlinx.coroutines.CompletableDeferred<JsonElement>()
+        pendingRequests[id] = deferred
+
+        val sent = runCatching {
+            socket.send(json.encodeToString(GatewayRequest.serializer(), probe))
+        }.getOrDefault(false)
+        if (!sent) {
+            pendingRequests.remove(id)
+            nonTrackingRequestIds.remove(id)
+            return false
         }
+        // Any response — even an RPC error — means the gateway is alive.
+        // Only a timeout means death.
+        val result = withTimeoutOrNull(HEARTBEAT_PROBE_TIMEOUT_MS) {
+            runCatching { deferred.await() }
+            true
+        }
+        pendingRequests.remove(id)
+        nonTrackingRequestIds.remove(id)
+        return result == true
     }
 
-    private fun parseStringList(element: JsonElement): List<String>? {
-        return try {
-            val array = when (element) {
-                is kotlinx.serialization.json.JsonArray -> element
-                is JsonObject -> element["choices"] as? kotlinx.serialization.json.JsonArray
-                    ?: element["pattern_keys"] as? kotlinx.serialization.json.JsonArray
-                else -> null
-            }
-            array?.map { it.jsonPrimitive.content }
-        } catch (e: Exception) {
-            null
+    // ── Event-id resume + dedupe (Phase 1 v3) ─────────────────────────────
+
+    /**
+     * The gateway may name this field differently across builds; accept the
+     * common spellings rather than hard-coding one and silently getting nothing.
+     */
+    private fun extractEventId(params: JsonObject, payload: JsonObject): Long? {
+        val keys = listOf("event_id", "eventId", "seq", "sequence")
+        for (k in keys) {
+            val v = params[k] ?: payload[k] ?: continue
+            val n = (v as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull()
+            if (n != null) return n
         }
+        return null
+    }
+
+    /**
+     * @return true if this event should be DROPPED as a duplicate replay.
+     */
+    private fun recordEventId(
+        sid: String?,
+        params: JsonObject,
+        payload: JsonObject,
+    ): Boolean {
+        val sessionId = sid ?: return false
+        val id = extractEventId(params, payload) ?: return false
+        val previous = lastEventIdBySession[sessionId]
+        if (previous != null && id <= previous) {
+            Timber.d("[Gateway] dropping replayed event $id for $sessionId")
+            return true
+        }
+        lastEventIdBySession[sessionId] = id
+        return false
     }
 
     /**
@@ -955,6 +1133,7 @@ class OkHttpGatewayClient @Inject constructor(
      * the class testable and future-proof if the lifetime changes.
      */
     fun close() {
+        stopHeartbeat()
         reconnectJob?.cancel()
         webSocket?.close(1000, "client shutdown")
         webSocket = null
@@ -974,6 +1153,15 @@ class OkHttpGatewayClient @Inject constructor(
 
         /** Clamp for the backoff shift: 1s,2s,4s,8s then the 15s ceiling. */
         private const val RECONNECT_BACKOFF_MAX_EXP = 4
-        private const val MAX_RECONNECT_WINDOW_MS = 120_000L // 2 minutes
+
+        // ── Heartbeat constants (Phase 1 v3) ──────────────────────────────
+        /** After this much inbound silence, send a probe. */
+        private const val HEARTBEAT_IDLE_THRESHOLD_MS = 30_000L
+        /** How often the heartbeat loop checks for silence. */
+        private const val HEARTBEAT_CHECK_INTERVAL_MS = 10_000L
+        /** How long to wait for the probe RPC response. */
+        private const val HEARTBEAT_PROBE_TIMEOUT_MS = 8_000L
+        /** Consecutive missed probes that force a reconnect. */
+        private const val HEARTBEAT_MAX_MISSES = 2
     }
 }
