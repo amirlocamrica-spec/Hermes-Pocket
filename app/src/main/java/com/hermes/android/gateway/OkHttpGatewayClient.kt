@@ -237,7 +237,9 @@ class OkHttpGatewayClient @Inject constructor(
                             // heartbeat (passive-first; probes only in silence).
                             startHeartbeat()
                             // Phase 1 v3: replay anything queued while offline.
-                            flushOutbox()
+                            // (launch: flushOutbox is a suspend fun and this
+                            // callback is on OkHttp's thread — never block it.)
+                            scope.launch { flushOutbox() }
                             // Session resume on reconnect. Capture into a local so
                             // a concurrent write to lastSessionId can't null it out
                             // between the check and the resume call.
@@ -528,7 +530,7 @@ class OkHttpGatewayClient @Inject constructor(
                 nextAttemptInMs = delayMs,
                 lastError = lastReason,
             )
-            Timber.i("[Gateway] reconnect attempt $attempt in ${delayMs}ms (last: $lastReason, elapsed: ${elapsed / 1000}s)")
+            Timber.i("[Gateway] reconnect attempt $attempt in ${delayMs}ms (last: $lastReason)")
             delay(delayMs)
 
             val url = currentUrl ?: return
