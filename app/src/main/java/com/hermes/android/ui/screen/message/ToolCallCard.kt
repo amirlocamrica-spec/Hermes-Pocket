@@ -137,12 +137,19 @@ internal fun ToolCallCard(message: ChatMessage.ToolCall) {
                 } else {
                     result
                 }
-                HermesMarkdown(
-                    markdown = displayResult,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                )
+                if (looksLikeDiff(result)) {
+                    // Patch/edit results get review-style coloring instead of
+                    // markdown — +green / −red makes the change legible at a
+                    // glance where monochrome prose does not.
+                    DiffView(text = displayResult)
+                } else {
+                    HermesMarkdown(
+                        markdown = displayResult,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
                 if (isLongResult) {
                     TextButton(
                         onClick = { resultExpanded = !resultExpanded },
