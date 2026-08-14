@@ -185,6 +185,7 @@ class MainActivity : FragmentActivity() {
  * - `skills` — skill management
  * - `cron` — cron job management
  * - `runtime` — runtime setup & status
+ * - `xkiro` — XKiro direct chat (api.xkiro.com)
  */
 @Composable
 private fun HermesNavHost(
@@ -218,6 +219,7 @@ private fun HermesNavHost(
                 onNavigateToSessions = { navController.navigate("sessions") },
                 onNavigateToTasks = { navController.navigate("tasks") },
                 onNavigateToRuntime = { navController.navigate("runtime") },
+                onNavigateToXKiro = { navController.navigate("xkiro") },
                 sharedText = shared,
                 resumeSessionId = if (forceNewChat) null else resumeId,
                 forceNewChat = forceNewChat,
@@ -343,6 +345,12 @@ private fun HermesNavHost(
                     context = androidx.compose.ui.platform.LocalContext.current,
                     entryPoint = com.hermes.android.di.ServerProfileEntryPoint::class.java,
                 ).serverProfileStore(),
+            )
+        }
+
+        composable("xkiro") {
+            com.hermes.android.ui.screen.XKiroChatScreen(
+                onNavigateBack = { navController.popBackStack() },
             )
         }
     }
