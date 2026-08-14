@@ -19,18 +19,23 @@ import com.hermes.android.ui.viewmodel.ChatConnectionState
  * Lightweight implementation (no Glance/widget dependency) — lives inside the
  * chat screen as an ambient status indicator with personality.
  */
+/** Pure mapping from connection state to pet visual - testable without Compose. */
+internal data class PetVisual(val emoji: String, val label: String)
+
+internal fun mapConnectionToPetVisual(state: ChatConnectionState): PetVisual = when (state) {
+    ChatConnectionState.Connected -> PetVisual("🐾", "آنلاین")
+    ChatConnectionState.Connecting -> PetVisual("🔍", "در حال اتصال...")
+    ChatConnectionState.Reconnecting -> PetVisual("🔄", "تلاش مجدد...")
+    ChatConnectionState.Disconnected -> PetVisual("😴", "آفلاین")
+    ChatConnectionState.Failed -> PetVisual("😵", "خطا!")
+}
+
 @Composable
 fun PetCompanion(
     connectionState: ChatConnectionState,
     modifier: Modifier = Modifier,
 ) {
-    val (emoji, label) = when (connectionState) {
-        ChatConnectionState.Connected -> "🐾" to "آنلاین"
-        ChatConnectionState.Connecting -> "🔍" to "در حال اتصال..."
-        ChatConnectionState.Reconnecting -> "🔄" to "تلاش مجدد..."
-        ChatConnectionState.Disconnected -> "😴" to "آفلاین"
-        ChatConnectionState.Failed -> "😵" to "خطا!"
-    }
+    val (emoji, label) = mapConnectionToPetVisual(connectionState)
 
     // Breathing animation when connected; bounce when reconnecting; static otherwise
     val infiniteTransition = rememberInfiniteTransition(label = "pet")
