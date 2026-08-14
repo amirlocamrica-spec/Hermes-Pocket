@@ -170,6 +170,7 @@ fun ChatScreen(
     onNavigateToRuntime: () -> Unit = {},
     sharedText: String? = null,
     resumeSessionId: String? = null,
+    forceNewChat: Boolean = false,
     themeModeState: com.hermes.android.ui.theme.ThemeModeState? = null,
     viewModel: ChatViewModel = hiltViewModel(),
 ) {

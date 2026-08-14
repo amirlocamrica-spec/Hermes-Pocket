@@ -33,4 +33,10 @@
     <string name="chat_input_hint">Type a message…</string>
     <string name="new_conversation">New conversation</string>
     <string name="settings">Settings</string>
+    <!-- App Shortcuts -->
+    <string name="shortcut_new_chat_short">New Chat</string>
+    <string name="shortcut_new_chat_long">Start a new conversation</string>
+    <string name="shortcut_search_short">Search</string>
+    <string name="shortcut_search_long">Search conversations</string>
+    <string name="shortcut_disabled">Shortcut unavailable</string>
 </resources>

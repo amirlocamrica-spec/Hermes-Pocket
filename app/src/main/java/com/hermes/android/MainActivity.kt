@@ -61,6 +61,14 @@ class MainActivity : FragmentActivity() {
             com.hermes.android.service.AgentActivityNotifier.EXTRA_SESSION_ID
         )
 
+        // Handle App Shortcut intents
+        val shortcutAction = intent?.action
+        if (shortcutAction == "com.hermes.android.ACTION_NEW_CHAT") {
+            intent?.putExtra("forceNewChat", true)
+        } else if (shortcutAction == "com.hermes.android.ACTION_SEARCH") {
+            intent?.putExtra("navigateToSearch", true)
+        }
+
         // Keep the gateway connection alive when the app is backgrounded.
         // Started unconditionally on every launch; onStartCommand() handles
         // "runtime not configured yet" gracefully.
@@ -85,6 +93,8 @@ class MainActivity : FragmentActivity() {
                         HermesNavHost(
                             sharedText = sharedText,
                             notificationSessionId = notificationSessionId,
+                            forceNewChat = intent?.getBooleanExtra("forceNewChat", false) == true,
+                            navigateToSearch = intent?.getBooleanExtra("navigateToSearch", false) == true,
                             themeModeState = themeModeState,
                             appLanguageState = appLanguageState,
                         )
@@ -180,6 +190,8 @@ class MainActivity : FragmentActivity() {
 private fun HermesNavHost(
     sharedText: String? = null,
     notificationSessionId: String? = null,
+    forceNewChat: Boolean = false,
+    navigateToSearch: Boolean = false,
     themeModeState: ThemeModeState? = null,
     appLanguageState: AppLanguageState? = null,
 ) {
@@ -207,7 +219,8 @@ private fun HermesNavHost(
                 onNavigateToTasks = { navController.navigate("tasks") },
                 onNavigateToRuntime = { navController.navigate("runtime") },
                 sharedText = shared,
-                resumeSessionId = resumeId,
+                resumeSessionId = if (forceNewChat) null else resumeId,
+                forceNewChat = forceNewChat,
                 themeModeState = themeModeState,
             )
         }
