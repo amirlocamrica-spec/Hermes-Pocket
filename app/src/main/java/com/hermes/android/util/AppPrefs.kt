@@ -27,6 +27,9 @@ object AppPrefs {
     const val KEY_NOTIF_AGENT_REPLY = "notif_agent_reply_enabled"   // Boolean, default true
     const val KEY_NOTIF_TASK_DONE = "notif_task_done_enabled"       // Boolean, default true
 
+    // Session archive (client-side soft-hide; sessions stay on the server)
+    const val KEY_ARCHIVED_SESSION_IDS = "archived_session_ids"     // StringSet
+
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -83,5 +86,14 @@ object AppPrefs {
 
     fun setTaskDoneNotifEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_NOTIF_TASK_DONE, enabled).apply()
+    }
+
+    // --- Session archive ---
+
+    fun getArchivedSessionIds(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_ARCHIVED_SESSION_IDS, emptySet()) ?: emptySet()
+
+    fun setArchivedSessionIds(context: Context, ids: Set<String>) {
+        prefs(context).edit().putStringSet(KEY_ARCHIVED_SESSION_IDS, ids).apply()
     }
 }

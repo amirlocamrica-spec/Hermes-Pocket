@@ -75,7 +75,7 @@ class ChatViewModel @Inject constructor(
     )
 
     private val drawerDelegate = ChatDrawerDelegate(
-        gatewayClient, viewModelScope,
+        gatewayClient, viewModelScope, context,
         loadSessionList = { sessionDelegate.loadList(it) },
         createNewSession = { sessionDelegate.create(it) },
     )
@@ -84,6 +84,7 @@ class ChatViewModel @Inject constructor(
         loadDraft()
         loadAssistantName()
         loadAssistantAvatar()
+        drawerDelegate.loadArchived(_uiState)
         connectAndCollect()
         loadCommandCatalog()
     }
@@ -584,6 +585,8 @@ class ChatViewModel @Inject constructor(
     fun drawerShowDelete(sessionId: String) = drawerDelegate.showDelete(_uiState, sessionId)
     fun drawerHideDelete() = drawerDelegate.hideDelete(_uiState)
     fun drawerConfirmDelete() = drawerDelegate.confirmDelete(_uiState)
+    fun drawerToggleArchive(sessionId: String) = drawerDelegate.toggleArchive(_uiState, sessionId)
+    fun drawerToggleShowArchived() = drawerDelegate.toggleShowArchived(_uiState)
 
     // ── Interactive responds ─────────────────────────────────────────────
 

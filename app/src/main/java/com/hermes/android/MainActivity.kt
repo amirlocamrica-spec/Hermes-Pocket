@@ -47,11 +47,6 @@ class MainActivity : FragmentActivity() {
     private var lastUnlockElapsedMs = Long.MAX_VALUE
     private var isLocked = false
 
-    override fun onStart() {
-        super.onStart()
-        agentNotifier.dismissAll()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -110,6 +105,10 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // The user came back — the "agent finished" notifications did their
+        // job; clear them so they stop lingering in the shade.
+        agentNotifier.dismissAll()
+
         // Foreground = the strongest reconnect signal there is. onStartCommand
         // re-runs the connect path; it's a cheap no-op when already connected,
         // and it cuts any pending backoff wait when we're offline.

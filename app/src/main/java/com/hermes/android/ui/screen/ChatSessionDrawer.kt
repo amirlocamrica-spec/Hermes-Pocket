@@ -82,17 +82,20 @@ internal fun SessionDrawerRow(
     session: SessionItem,
     isActive: Boolean,
     isPinned: Boolean,
+    isArchived: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onPin: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onArchive: () -> Unit = {},
 ) {
     val relativeTime = formatRelativeTime(session.updatedAt)
     val messageCountText = session.messageCount?.let { count ->
         t("$count messages", "$count پیام")
     }
     val subtitle = buildString {
+        if (isArchived) append("📦 ")
         if (isPinned) append("📌 ")
         if (messageCountText != null) {
             append(messageCountText)
@@ -166,10 +169,15 @@ internal fun SessionDrawerRow(
         SharedDrawerActionMenu(
             expanded = showMenu,
             isPinned = isPinned,
+            isArchived = isArchived,
             onDismiss = { showMenu = false },
             onPin = {
                 showMenu = false
                 onPin()
+            },
+            onArchive = {
+                showMenu = false
+                onArchive()
             },
             onRename = {
                 showMenu = false
@@ -191,8 +199,10 @@ internal fun SessionDrawerRow(
 private fun SharedDrawerActionMenu(
     expanded: Boolean,
     isPinned: Boolean,
+    isArchived: Boolean = false,
     onDismiss: () -> Unit,
     onPin: () -> Unit,
+    onArchive: () -> Unit = {},
     onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -227,6 +237,11 @@ private fun SharedDrawerActionMenu(
                     icon = Icons.Default.PushPin,
                     label = if (isPinned) t("Unpin", "برداشتن سنجاق") else t("Pin", "سنجاق کردن"),
                     onClick = onPin,
+                )
+                SharedDrawerActionRow(
+                    icon = Icons.Default.Archive,
+                    label = if (isArchived) t("Unarchive", "برگشت از آرشیو") else t("Archive", "آرشیو کردن"),
+                    onClick = onArchive,
                 )
                 SharedDrawerActionRow(
                     icon = Icons.Default.Edit,
@@ -288,13 +303,17 @@ internal fun HermesDrawerContent(
     drawerSearchQuery: String,
     drawerSortNewest: Boolean,
     drawerPinnedIds: Set<String>,
+    drawerArchivedIds: Set<String> = emptySet(),
+    drawerShowArchived: Boolean = false,
     onSearchQueryChange: (String) -> Unit,
     onToggleSort: () -> Unit,
+    onToggleShowArchived: () -> Unit = {},
     onSessionClick: (String) -> Unit,
     onRenameAssistant: () -> Unit,
     onTasks: () -> Unit,
     onRenameSession: (String, String) -> Unit,
     onTogglePin: (String) -> Unit,
+    onArchiveSession: (String) -> Unit = {},
     onDeleteSession: (String) -> Unit,
     onNewChat: () -> Unit,
     onSettings: () -> Unit,
@@ -310,10 +329,21 @@ internal fun HermesDrawerContent(
         onSearchQueryChange("")
     }
 
-    val filteredSessions = remember(sessions, drawerSearchQuery, drawerSortNewest, drawerPinnedIds) {
+    val filteredSessions = remember(
+        sessions, drawerSearchQuery, drawerSortNewest, drawerPinnedIds,
+        drawerArchivedIds, drawerShowArchived,
+    ) {
         var list = sessions
+        // Default view hides archived sessions; archive view shows only them.
+        // Search ignores the archive filter so nothing becomes unfindable.
         val q = drawerSearchQuery.trim().lowercase()
-        if (q.isNotEmpty()) {
+        if (q.isEmpty()) {
+            list = if (drawerShowArchived) {
+                list.filter { it.id in drawerArchivedIds }
+            } else {
+                list.filter { it.id !in drawerArchivedIds }
+            }
+        } else {
             list = list.filter { it.title.lowercase().contains(q) }
         }
         list = if (drawerSortNewest) {
@@ -377,15 +407,53 @@ internal fun HermesDrawerContent(
                         )
                     }
                 }
+                item(key = "drawer-archive-toggle") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 3.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                if (drawerShowArchived) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                else Color.Transparent,
+                            )
+                            .clickable(onClick = onToggleShowArchived)
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Archive,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Text(
+                            text = if (drawerShowArchived) t("Show active chats", "نمایش گفتگوهای فعال")
+                                   else t("Archive", "آرشیو"),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        if (drawerArchivedIds.isNotEmpty()) {
+                            Text(
+                                text = "${drawerArchivedIds.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 items(filteredSessions, key = { it.id }) { session ->
                     SessionDrawerRow(
                         session = session,
                         isActive = session.id == activeSessionId,
                         isPinned = session.id in drawerPinnedIds,
+                        isArchived = session.id in drawerArchivedIds,
                         onClick = { onSessionClick(session.id) },
                         onLongClick = { onRenameSession(session.id, session.title) },
                         onPin = { onTogglePin(session.id) },
                         onRename = { onRenameSession(session.id, session.title) },
+                        onArchive = { onArchiveSession(session.id) },
                         onDelete = { onDeleteSession(session.id) },
                     )
                 }

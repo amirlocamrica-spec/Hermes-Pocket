@@ -157,6 +157,9 @@ data class ChatUiState(
     val drawerPinnedIds: Set<String> = emptySet(),
     val drawerRenameTarget: DrawerRenameState? = null,
     val drawerDeleteTarget: String? = null,
+    // Archive: client-side soft-hide; true = drawer shows archived sessions
+    val drawerArchivedIds: Set<String> = emptySet(),
+    val drawerShowArchived: Boolean = false,
     // Triggers scroll-to-bottom on session load (changes value each time)
     val sessionLoadedAt: Long = 0L,
     // Files/images staged on the gateway, waiting to go with the next prompt

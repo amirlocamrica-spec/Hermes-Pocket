@@ -13,6 +13,7 @@ import timber.log.Timber
 internal class ChatDrawerDelegate(
     private val gatewayClient: GatewayClient,
     private val scope: CoroutineScope,
+    private val context: android.content.Context,
     private val loadSessionList: suspend (MutableStateFlow<ChatUiState>) -> Unit,
     private val createNewSession: suspend (MutableStateFlow<ChatUiState>) -> Unit,
 ) {
@@ -29,6 +30,29 @@ internal class ChatDrawerDelegate(
         state.update { it.copy(
             drawerPinnedIds = if (sessionId in pins) pins - sessionId else pins + sessionId,
         ) }
+    }
+
+    fun toggleShowArchived(state: MutableStateFlow<ChatUiState>) {
+        state.update { it.copy(drawerShowArchived = !state.value.drawerShowArchived) }
+    }
+
+    /**
+     * Archive / un-archive a session. Client-side only (local prefs): the
+     * session stays intact on the server, it just moves out of the default
+     * drawer list. Persisted so the hide survives app restarts.
+     */
+    fun toggleArchive(state: MutableStateFlow<ChatUiState>, sessionId: String) {
+        val archived = state.value.drawerArchivedIds
+        val next = if (sessionId in archived) archived - sessionId else archived + sessionId
+        com.hermes.android.util.AppPrefs.setArchivedSessionIds(context, next)
+        state.update { it.copy(drawerArchivedIds = next) }
+    }
+
+    fun loadArchived(state: MutableStateFlow<ChatUiState>) {
+        val archived = com.hermes.android.util.AppPrefs.getArchivedSessionIds(context)
+        if (archived.isNotEmpty()) {
+            state.update { it.copy(drawerArchivedIds = archived) }
+        }
     }
 
     fun showRename(state: MutableStateFlow<ChatUiState>, sessionId: String, currentTitle: String) {
