@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Key
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +53,9 @@ internal fun SettingsMenu(
     serverUrl: String,
     onOpen: (SettingsSection) -> Unit,
     onNavigateToRuntime: () -> Unit,
+    onNavigateToAether: () -> Unit,
+    onNavigateToHarness: () -> Unit,
+    onNavigateToProfiles: () -> Unit,
     onNavigateToPlatforms: () -> Unit,
     onNavigateToPlugins: () -> Unit,
     onNavigateToSkills: () -> Unit,
@@ -124,6 +129,24 @@ internal fun SettingsMenu(
         }
 
         val tiles = listOf(
+            DomainSpec(
+                title = t("Aether", "اتر"),
+                subtitle = t("Direct LLM chat, no server", "چت مستقیم با مدل، بدون سرور"),
+                icon = Icons.Default.Cloud,
+                onClick = onNavigateToAether,
+            ),
+            DomainSpec(
+                title = t("Harness", "هارنس"),
+                subtitle = t("On-device agent, local tools", "ایجنت روی دستگاه، ابزار لوکال"),
+                icon = Icons.Default.Terminal,
+                onClick = onNavigateToHarness,
+            ),
+            DomainSpec(
+                title = t("Server Profiles", "پروفایل سرورها"),
+                subtitle = t("Multiple servers, fast switch", "چند سرور، سوییچ سریع"),
+                icon = Icons.Default.Storage,
+                onClick = onNavigateToProfiles,
+            ),
             DomainSpec(
                 title = t("Models", "مدل\u200Cها"),
                 subtitle = state.activeModel?.let { model ->

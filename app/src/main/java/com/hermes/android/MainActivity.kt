@@ -244,6 +244,9 @@ private fun HermesNavHost(
                 onNavigateToSkills = { navController.navigate("skills") },
                 onNavigateToCron = { navController.navigate("cron") },
                 onNavigateToRuntime = { navController.navigate("runtime") },
+                onNavigateToAether = { navController.navigate("aether") },
+                onNavigateToHarness = { navController.navigate("harness") },
+                onNavigateToProfiles = { navController.navigate("profiles") },
                 onNavigateToProjects = { navController.navigate("projects") },
                 onNavigateToPet = { navController.navigate("pet") },
                 onNavigateToBilling = { navController.navigate("billing") },
@@ -318,6 +321,28 @@ private fun HermesNavHost(
         composable("runtime") {
             com.hermes.android.ui.screen.RuntimeSetupScreen(
                 onNavigateBack = { navController.popBackStack() },
+            )
+        }
+
+        composable("aether") {
+            com.hermes.android.ui.screen.AetherScreen(
+                onNavigateBack = { navController.popBackStack() },
+            )
+        }
+
+        composable("harness") {
+            com.hermes.android.ui.screen.HarnessScreen(
+                onNavigateBack = { navController.popBackStack() },
+            )
+        }
+
+        composable("profiles") {
+            com.hermes.android.ui.screen.ServerProfilesScreen(
+                onNavigateBack = { navController.popBackStack() },
+                store = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                    context = androidx.compose.ui.platform.LocalContext.current,
+                    entryPoint = com.hermes.android.di.ServerProfileEntryPoint::class.java,
+                ).serverProfileStore(),
             )
         }
     }
