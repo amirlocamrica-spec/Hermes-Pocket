@@ -357,29 +357,54 @@ internal fun MessageBubble(
 ) {
     when (message) {
         is ChatMessage.User -> {
-            UserMessageBubble(
-                message = message,
-                searchQuery = searchQuery,
-                isLastInGroup = isLastInGroup,
-                onCopyMessage = onCopyMessage,
-            )
+            // Quick horizontal swipe copies the message — faster than the
+            // long-press menu for the single most common action.
+            SwipeToCopyBox(onCopy = { onCopyMessage(message.text) }) {
+                UserMessageBubble(
+                    message = message,
+                    searchQuery = searchQuery,
+                    isLastInGroup = isLastInGroup,
+                    onCopyMessage = onCopyMessage,
+                )
+            }
         }
 
         is ChatMessage.Assistant -> {
-            AssistantMessageBubble(
-                message = message,
-                searchQuery = searchQuery,
-                isLastAssistant = isLastAssistant,
-                isSending = isSending,
-                onCopyMessage = onCopyMessage,
-                onCopyCode = onCopyCode,
-                onRetry = onRetry,
-                onImageClick = onImageClick,
-                resolveUrl = resolveUrl,
-                onBranch = onBranch,
-                onDownloadFile = onDownloadFile,
-                onSpeak = onSpeak,
-            )
+            // Swipe-to-copy only once the reply is done; a streaming bubble
+            // would copy a half-written answer.
+            if (!message.isStreaming) {
+                SwipeToCopyBox(onCopy = { onCopyMessage(message.text) }) {
+                    AssistantMessageBubble(
+                        message = message,
+                        searchQuery = searchQuery,
+                        isLastAssistant = isLastAssistant,
+                        isSending = isSending,
+                        onCopyMessage = onCopyMessage,
+                        onCopyCode = onCopyCode,
+                        onRetry = onRetry,
+                        onImageClick = onImageClick,
+                        resolveUrl = resolveUrl,
+                        onBranch = onBranch,
+                        onDownloadFile = onDownloadFile,
+                        onSpeak = onSpeak,
+                    )
+                }
+            } else {
+                AssistantMessageBubble(
+                    message = message,
+                    searchQuery = searchQuery,
+                    isLastAssistant = isLastAssistant,
+                    isSending = isSending,
+                    onCopyMessage = onCopyMessage,
+                    onCopyCode = onCopyCode,
+                    onRetry = onRetry,
+                    onImageClick = onImageClick,
+                    resolveUrl = resolveUrl,
+                    onBranch = onBranch,
+                    onDownloadFile = onDownloadFile,
+                    onSpeak = onSpeak,
+                )
+            }
         }
 
         is ChatMessage.ToolCall -> {
