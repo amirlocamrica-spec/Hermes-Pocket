@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -262,7 +262,7 @@ fun XKiroChatScreen(
                             clipboardManager.setText(AnnotatedString(message.content))
                             Toast.makeText(
                                 context,
-                                t("Copied", "کپی شد"),
+                                "کپی شد",
                                 Toast.LENGTH_SHORT,
                             ).show()
                         },
