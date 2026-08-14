@@ -654,9 +654,6 @@ fun ChatScreen(
                         // evenly-spaced list.
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
-                        // Phase 7: pre-compose items just outside viewport
-                        // to reduce jank on fast scroll.
-                        beyondBoundsItemCount = 3,
                     ) {
                         if (filteredMessages.isEmpty() &&
                             uiState.connectionState == ChatConnectionState.Connected
