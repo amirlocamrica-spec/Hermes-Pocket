@@ -697,8 +697,8 @@ fun ChatScreen(
                                 }
                             },
                         ) { index, message ->
-                            # Phase 7: cache last-assistant ID outside item scope
-                            # so individual items don't re-derive on every scroll.
+                            // Phase 7: cache last-assistant ID outside item scope
+                            // so individual items don't re-derive on every scroll.
                             val lastAssistantId = remember(filteredMessages) {
                                 filteredMessages.lastOrNull { it is ChatMessage.Assistant }?.id
                             }
