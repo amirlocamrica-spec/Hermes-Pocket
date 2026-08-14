@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ main, v3-rewrite ]
+    branches: [ main, v3-rewrite, super-upgrade ]
   workflow_dispatch:
 
 jobs:
