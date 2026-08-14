@@ -605,6 +605,19 @@ fun ChatScreen(
                 // Feature #32: Shimmer skeleton when connecting
                 if (uiState.connectionState == ChatConnectionState.Connecting && uiState.messages.isEmpty()) {
                     ShimmerSkeleton()
+                } else if (uiState.messages.isEmpty() &&
+                    uiState.connectionState == ChatConnectionState.Connected &&
+                    !uiState.showSearch
+                ) {
+                    // Phase 6: Pet Companion as empty-state ambient indicator
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        com.hermes.android.ui.component.PetCompanion(
+                            connectionState = uiState.connectionState,
+                        )
+                    }
                 } else {
                     // Notification banner
                     notification?.let { notif ->
