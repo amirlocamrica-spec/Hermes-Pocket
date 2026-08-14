@@ -1,10 +1,12 @@
 package com.hermes.android.runtime.remote
 
 import android.content.Context
+import com.hermes.android.security.SecurePrefs
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -12,9 +14,12 @@ import javax.inject.Singleton
  * User-entered connection settings for the remote Hermes server.
  *
  * ## Storage
- * Persisted in SharedPreferences (same pattern as TermuxBridge's session
- * token). The token is entered by the user in the Runtime Setup screen and
- * must match the `HERMES_DASHBOARD_SESSION_TOKEN` the server was started with.
+ * Persisted in ENCRYPTED SharedPreferences (Keystore-backed, see
+ * [SecurePrefs]) — the gateway token grants full agent control and must
+ * never sit in a plaintext prefs file. A one-time migration pulls values
+ * out of the legacy plaintext file older versions wrote, then deletes it.
+ * The token is entered by the user in the Runtime Setup screen and must
+ * match the `HERMES_DASHBOARD_SESSION_TOKEN` the server was started with.
  *
  * ## URL format
  * [serverUrl] is the base URL of the reverse proxy in front of
@@ -28,9 +33,10 @@ import javax.inject.Singleton
  */
 @Singleton
 class RemoteServerSettings @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
+    securePrefs: SecurePrefs,
 ) {
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = securePrefs.prefs(PREFS_NAME)
 
     private val _config = MutableStateFlow(load())
 
@@ -71,13 +77,51 @@ class RemoteServerSettings @Inject constructor(
         return "$base$WS_PATH?token=$encodedToken"
     }
 
-    private fun load(): RemoteServerConfig = RemoteServerConfig(
-        serverUrl = prefs.getString(KEY_SERVER_URL, "") ?: "",
-        token = prefs.getString(KEY_TOKEN, "") ?: "",
-    )
+    private fun load(): RemoteServerConfig {
+        migrateLegacyIfNeeded()
+        return RemoteServerConfig(
+            serverUrl = prefs.getString(KEY_SERVER_URL, "") ?: "",
+            token = prefs.getString(KEY_TOKEN, "") ?: "",
+        )
+    }
+
+    /**
+     * One-time migration: earlier versions stored the gateway token in a
+     * PLAINTEXT SharedPreferences file. Move both values into the encrypted
+     * store, then delete the plaintext file so the token no longer sits
+     * unencrypted on disk (or inside adb backups).
+     *
+     * Runs before the first [load]; failures are logged but never crash —
+     * worst case the user re-enters the config on the setup screen.
+     */
+    private fun migrateLegacyIfNeeded() {
+        try {
+            val legacy = context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+            if (legacy.all.isEmpty()) {
+                context.deleteSharedPreferences(LEGACY_PREFS_NAME)
+                return
+            }
+            val legacyUrl = legacy.getString(KEY_SERVER_URL, "") ?: ""
+            val legacyToken = legacy.getString(KEY_TOKEN, "") ?: ""
+            // Only migrate when the encrypted store doesn't already hold
+            // values (don't clobber a fresher config).
+            if (prefs.getString(KEY_TOKEN, "").isNullOrBlank()) {
+                prefs.edit()
+                    .putString(KEY_SERVER_URL, legacyUrl)
+                    .putString(KEY_TOKEN, legacyToken)
+                    .commit() // commit, not apply: the plaintext file is deleted right after
+            }
+            legacy.edit().clear().commit()
+            context.deleteSharedPreferences(LEGACY_PREFS_NAME)
+            Timber.i("[RemoteServerSettings] migrated legacy config into encrypted storage")
+        } catch (e: Exception) {
+            Timber.w(e, "[RemoteServerSettings] legacy migration failed")
+        }
+    }
 
     companion object {
-        private const val PREFS_NAME = "hermes_remote_server"
+        private const val PREFS_NAME = "hermes_remote_server_secure"
+        private const val LEGACY_PREFS_NAME = "hermes_remote_server"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_TOKEN = "token"
         private const val WS_PATH = "/api/ws"

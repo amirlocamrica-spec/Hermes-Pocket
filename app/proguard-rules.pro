@@ -37,6 +37,11 @@
 # Keep WorkManager
 -keep class androidx.work.** { *; }
 
+# Keep androidx.security / Tink (EncryptedSharedPreferences uses reflection)
+-keep class androidx.security.crypto.** { *; }
+-dontwarn com.google.crypto.tink.**
+-keep class com.google.crypto.tink.** { *; }
+
 # Keep Timber (logging)
 -keep class timber.log.** { *; }
 

@@ -5,7 +5,7 @@ name: Release Signed APK
 # This builds a SIGNED release APK and publishes it as a GitHub Release.
 #
 # Required repository secrets (Settings → Secrets and variables → Actions):
-#   KEYSTORE_BASE64    base64 of your .keystore/.jks file
+#   KEYSTORE_FILE      base64 of your .keystore/.jks file
 #   KEYSTORE_PASSWORD  store password
 #   KEY_ALIAS          key alias
 #   KEY_PASSWORD       key password
@@ -51,10 +51,10 @@ jobs:
 
       - name: Decode signing keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_FILE }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::KEYSTORE_BASE64 secret is missing. Add the four signing secrets in repo Settings → Secrets and variables → Actions."
+            echo "::error::KEYSTORE_FILE secret is missing. Add the four signing secrets (KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD) in repo Settings → Secrets and variables → Actions."
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"

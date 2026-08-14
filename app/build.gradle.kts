@@ -120,6 +120,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.security.crypto)
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))
