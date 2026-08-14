@@ -408,18 +408,17 @@ class AetherClient @Inject constructor() {
     ): Call {
         val call = http.newCall(request)
         val acc = StringBuilder()
-        @Volatile var finished = false
+        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
         val finish: (Result) -> Unit = { result ->
-            synchronized(acc) {
-                if (!finished) {
-                    finished = true
-                    onComplete(result)
-                }
+            // compareAndSet keeps exactly one terminal result alive even if
+            // onClosed races an explicit finish from the parser.
+            if (finished.compareAndSet(false, true)) {
+                onComplete(result)
             }
         }
         val listener = object : EventSourceListener() {
             override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
-                if (finished) return
+                if (finished.get()) return
                 onData(data, acc, finish)
             }
 

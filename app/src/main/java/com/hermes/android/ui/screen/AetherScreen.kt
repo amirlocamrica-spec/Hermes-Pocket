@@ -105,9 +105,11 @@ fun AetherScreen(
                 IconButton(onClick = { viewModel.newConversation() }) {
                     Icon(Icons.Default.Add, contentDescription = t("New chat", "چت جدید"))
                 }
+                val savedLabel = t("Saved: ", "ذخیره شد: ")
                 IconButton(onClick = {
+                    // t() is @Composable — resolve it above; this lambda is not.
                     viewModel.exportMarkdown { path ->
-                        Toast.makeText(context, t("Saved: ", "ذخیره شد: ") + path, Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, savedLabel + path, Toast.LENGTH_LONG).show()
                     }
                 }) {
                     Icon(Icons.Default.Download, contentDescription = t("Export", "خروجی"))
