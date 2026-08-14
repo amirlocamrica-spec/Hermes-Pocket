@@ -34,13 +34,17 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -185,6 +189,7 @@ fun ChatScreen(
     var fullscreenImageUrl by remember { mutableStateOf<String?>(null) }
     var showRenameAssistantDialog by remember { mutableStateOf(false) }
     var showChanges by remember { mutableStateOf(false) }
+    var showCommandPalette by remember { mutableStateOf(false) }
 
     // ── Voice messages ────────────────────────────────────────────────────
     var isRecording by remember { mutableStateOf(false) }
@@ -391,6 +396,108 @@ fun ChatScreen(
         }
     }
 
+    // ── Command palette (Ctrl+K-style quick actions) ──────────────────────
+    // Every chat quick action in one searchable sheet, opened by the spark
+    // button in the top bar. Each action closes the palette itself so a
+    // command could also keep it open if it ever needed to.
+    if (showCommandPalette) {
+        CommandPalette(
+            commands = listOf(
+                PaletteCommand(
+                    id = "new_chat",
+                    titleEn = "New chat",
+                    titleFa = "گفتگوی جدید",
+                    icon = Icons.Default.Add,
+                    action = {
+                        showCommandPalette = false
+                        viewModel.newConversation()
+                    },
+                ),
+                PaletteCommand(
+                    id = "sessions",
+                    titleEn = "Sessions",
+                    titleFa = "گفتگوها",
+                    icon = Icons.Default.History,
+                    action = {
+                        showCommandPalette = false
+                        onNavigateToSessions()
+                    },
+                ),
+                PaletteCommand(
+                    id = "tasks",
+                    titleEn = "Tasks",
+                    titleFa = "وظایف",
+                    icon = Icons.Default.Checklist,
+                    action = {
+                        showCommandPalette = false
+                        onNavigateToTasks()
+                    },
+                ),
+                PaletteCommand(
+                    id = "search_messages",
+                    titleEn = "Search messages",
+                    titleFa = "جستجو در پیام‌ها",
+                    icon = Icons.Default.Search,
+                    action = {
+                        showCommandPalette = false
+                        if (!uiState.showSearch) viewModel.toggleSearch()
+                    },
+                ),
+                PaletteCommand(
+                    id = "stop",
+                    titleEn = "Stop generation",
+                    titleFa = "توقف تولید",
+                    icon = Icons.Default.Stop,
+                    action = {
+                        showCommandPalette = false
+                        viewModel.stopGeneration()
+                    },
+                ),
+                PaletteCommand(
+                    id = "retry_last",
+                    titleEn = "Retry last message",
+                    titleFa = "تلاش دوباره آخرین پیام",
+                    icon = Icons.Default.Refresh,
+                    action = {
+                        showCommandPalette = false
+                        viewModel.retryLastMessage()
+                    },
+                ),
+                PaletteCommand(
+                    id = "branch",
+                    titleEn = "Branch session",
+                    titleFa = "شاخه‌گیری از گفتگو",
+                    icon = Icons.Default.CallSplit,
+                    action = {
+                        showCommandPalette = false
+                        viewModel.branchSession()
+                    },
+                ),
+                PaletteCommand(
+                    id = "runtime",
+                    titleEn = "Runtime status",
+                    titleFa = "وضعیت اجرا",
+                    icon = Icons.Default.RocketLaunch,
+                    action = {
+                        showCommandPalette = false
+                        onNavigateToRuntime()
+                    },
+                ),
+                PaletteCommand(
+                    id = "settings",
+                    titleEn = "Settings",
+                    titleFa = "تنظیمات",
+                    icon = Icons.Default.Settings,
+                    action = {
+                        showCommandPalette = false
+                        onNavigateToSettings()
+                    },
+                ),
+            ),
+            onDismiss = { showCommandPalette = false },
+        )
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -528,6 +635,11 @@ fun ChatScreen(
                             icon = if (uiState.showSearch) Icons.Default.Close else Icons.Default.Search,
                             contentDescription = t("Search", "جستجو"),
                             onClick = { viewModel.toggleSearch() },
+                        )
+                        HxHeaderCircleButton(
+                            icon = Icons.Default.AutoAwesome,
+                            contentDescription = t("Commands", "دستورها"),
+                            onClick = { showCommandPalette = true },
                         )
                     }
                     // Feature #16: Search bar (below TopAppBar)
