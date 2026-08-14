@@ -654,6 +654,9 @@ fun ChatScreen(
                         // evenly-spaced list.
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
+                        // Phase 7: pre-compose items just outside viewport
+                        // to reduce jank on fast scroll.
+                        beyondBoundsItemCount = 3,
                     ) {
                         if (filteredMessages.isEmpty() &&
                             uiState.connectionState == ChatConnectionState.Connected
@@ -680,10 +683,28 @@ fun ChatScreen(
                                 }
                             }
                         }
-                        itemsIndexed(filteredMessages, key = { _, m -> m.id }) { index, message ->
+                        itemsIndexed(
+                            filteredMessages,
+                            key = { _, m -> m.id },
+                            contentType = { _, m ->
+                                when (m) {
+                                    is ChatMessage.User -> "user"
+                                    is ChatMessage.Assistant -> "assistant"
+                                    is ChatMessage.ToolCall -> "tool"
+                                    is ChatMessage.Status -> "status"
+                                    is ChatMessage.InteractiveRequest -> "interactive"
+                                    is ChatMessage.SubagentCard -> "subagent"
+                                }
+                            },
+                        ) { index, message ->
+                            # Phase 7: cache last-assistant ID outside item scope
+                            # so individual items don't re-derive on every scroll.
+                            val lastAssistantId = remember(filteredMessages) {
+                                filteredMessages.lastOrNull { it is ChatMessage.Assistant }?.id
+                            }
                             val isLastAssistant = message is ChatMessage.Assistant &&
                                     !message.isStreaming &&
-                                    filteredMessages.lastOrNull { it is ChatMessage.Assistant } == message
+                                    message.id == lastAssistantId
                             // Grouped == previous message is from the same side
                             // (user vs agent). Used to show the agent avatar only
                             // once per run and tighten consecutive bubbles.
