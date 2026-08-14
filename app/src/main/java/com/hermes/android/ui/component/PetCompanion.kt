@@ -14,22 +14,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermes.android.ui.viewmodel.ChatConnectionState
 
+/** Pure mapping from connection state to pet visual — testable without Compose. */
+internal data class PetVisual(val emoji: String, val label: String)
+
+internal fun mapConnectionToPetVisual(state: ChatConnectionState): PetVisual = when (state) {
+    ChatConnectionState.Connected -> PetVisual("\uD83D\uDC3E", "آنلاین")
+    ChatConnectionState.Connecting -> PetVisual("\uD83D\uDD0D", "در حال اتصال...")
+    ChatConnectionState.Reconnecting -> PetVisual("\uD83D\uDD04", "تلاش مجدد...")
+    ChatConnectionState.Disconnected -> PetVisual("\uD83D\uDE34", "آفلاین")
+    ChatConnectionState.Failed -> PetVisual("\uD83D\uDE35", "خطا!")
+}
+
 /**
  * A reactive pet companion that visually reflects the gateway connection state.
  * Lightweight implementation (no Glance/widget dependency) — lives inside the
  * chat screen as an ambient status indicator with personality.
  */
-/** Pure mapping from connection state to pet visual - testable without Compose. */
-internal data class PetVisual(val emoji: String, val label: String)
-
-internal fun mapConnectionToPetVisual(state: ChatConnectionState): PetVisual = when (state) {
-    ChatConnectionState.Connected -> PetVisual("🐾", "آنلاین")
-    ChatConnectionState.Connecting -> PetVisual("🔍", "در حال اتصال...")
-    ChatConnectionState.Reconnecting -> PetVisual("🔄", "تلاش مجدد...")
-    ChatConnectionState.Disconnected -> PetVisual("😴", "آفلاین")
-    ChatConnectionState.Failed -> PetVisual("😵", "خطا!")
-}
-
 @Composable
 fun PetCompanion(
     connectionState: ChatConnectionState,
@@ -91,5 +91,3 @@ fun PetCompanion(
 }
 
 private val EaseInOutSine: Easing = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
-
-</parameter>
