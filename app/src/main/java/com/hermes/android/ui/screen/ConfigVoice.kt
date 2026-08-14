@@ -41,6 +41,8 @@ internal fun VoiceSecuritySection(
     var voiceReplies by remember { mutableStateOf(AppPrefs.isVoiceRepliesEnabled(context)) }
     var voiceAutoplay by remember { mutableStateOf(AppPrefs.isVoiceAutoplayEnabled(context)) }
     var biometricLock by remember { mutableStateOf(AppPrefs.isBiometricLockEnabled(context)) }
+    var notifAgentReply by remember { mutableStateOf(AppPrefs.isAgentReplyNotifEnabled(context)) }
+    var notifTaskDone by remember { mutableStateOf(AppPrefs.isTaskDoneNotifEnabled(context)) }
 
     Column(
         modifier = Modifier
@@ -92,6 +94,39 @@ internal fun VoiceSecuritySection(
                 onCheckedChange = {
                     biometricLock = it
                     AppPrefs.setBiometricLockEnabled(context, it)
+                },
+            )
+        }
+
+        SettingsGroup {
+            Text(
+                text = t("Notifications", "اعلان‌ها"),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+            SettingSwitchRow(
+                title = t("Agent reply alerts", "اعلان پاسخ ایجنت"),
+                subtitle = t(
+                    "Notify when the agent finishes replying while the app is in the background.",
+                    "وقتی اپ در پس‌زمینه است و ایجنت پاسخ را تمام کرد، اعلان بده.",
+                ),
+                checked = notifAgentReply,
+                onCheckedChange = {
+                    notifAgentReply = it
+                    AppPrefs.setAgentReplyNotifEnabled(context, it)
+                },
+            )
+            HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
+            SettingSwitchRow(
+                title = t("Task completion alerts", "اعلان اتمام تسک"),
+                subtitle = t(
+                    "Notify when a background task finishes while the app is in the background.",
+                    "وقتی اپ در پس‌زمینه است و تسک پس‌زمینه تمام شد، اعلان بده.",
+                ),
+                checked = notifTaskDone,
+                onCheckedChange = {
+                    notifTaskDone = it
+                    AppPrefs.setTaskDoneNotifEnabled(context, it)
                 },
             )
         }

@@ -23,6 +23,10 @@ object AppPrefs {
     const val KEY_BIOMETRIC_LOCK = "biometric_lock_enabled"
     const val KEY_BIOMETRIC_LOCK_TIMEOUT_MIN = "biometric_lock_timeout_min" // Int, default 5
 
+    // Notifications
+    const val KEY_NOTIF_AGENT_REPLY = "notif_agent_reply_enabled"   // Boolean, default true
+    const val KEY_NOTIF_TASK_DONE = "notif_task_done_enabled"       // Boolean, default true
+
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -63,5 +67,21 @@ object AppPrefs {
 
     fun setBiometricLockTimeoutMinutes(context: Context, minutes: Int) {
         prefs(context).edit().putInt(KEY_BIOMETRIC_LOCK_TIMEOUT_MIN, minutes.coerceAtLeast(0)).apply()
+    }
+
+    // --- Notifications ---
+
+    fun isAgentReplyNotifEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_NOTIF_AGENT_REPLY, true)
+
+    fun setAgentReplyNotifEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_NOTIF_AGENT_REPLY, enabled).apply()
+    }
+
+    fun isTaskDoneNotifEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_NOTIF_TASK_DONE, true)
+
+    fun setTaskDoneNotifEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_NOTIF_TASK_DONE, enabled).apply()
     }
 }

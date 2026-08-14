@@ -37,6 +37,10 @@ class AgentActivityNotifier @Inject constructor(
 
     /** A live chat turn finished while the app was backgrounded. */
     fun showTurnComplete(sessionId: String?, preview: String) {
+        // User-level kill switch (Settings → Behavior). Checked here, not at
+        // call sites, so every delivery path (live events, reconnect sync,
+        // periodic worker) honors it without re-implementing the gate.
+        if (!com.hermes.android.util.AppPrefs.isAgentReplyNotifEnabled(context)) return
         show(
             key = sessionId ?: "turn",
             title = context.getString(R.string.notification_agent_reply_title),
@@ -47,12 +51,29 @@ class AgentActivityNotifier @Inject constructor(
 
     /** A prompt.background task finished (result is ephemeral — show it). */
     fun showBackgroundTaskComplete(taskId: String, sessionId: String?, preview: String) {
+        if (!com.hermes.android.util.AppPrefs.isTaskDoneNotifEnabled(context)) return
         show(
             key = "bg_$taskId",
             title = context.getString(R.string.notification_task_done_title),
             preview = preview,
             sessionId = sessionId,
         )
+    }
+
+    /**
+     * Dismiss every agent-activity notification this class posted.
+     * Called when the app returns to the foreground — once the user is
+     * looking at the app, the "agent finished while you were away" alerts
+     * have served their purpose and shouldn't linger in the shade.
+     *
+     * Cancels only ids we tracked, never [NotificationManager.cancelAll] —
+     * that would also kill the gateway foreground-service notification.
+     */
+    fun dismissAll() {
+        if (postedIds.isEmpty()) return
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        postedIds.forEach { manager.cancel(it) }
+        postedIds.clear()
     }
 
     private fun show(key: String, title: String, preview: String, sessionId: String?) {
@@ -77,12 +98,18 @@ class AgentActivityNotifier @Inject constructor(
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            // Same group on every agent notification → the system bundles
+            // them into one expandable stack instead of spamming the shade
+            // when several sessions/tasks finish back-to-back.
+            .setGroup(GROUP_AGENT)
             .setContentIntent(contentIntent)
             .setAutoCancel(true)
             .build()
 
+        val id = key.hashCode()
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(key.hashCode(), notification)
+        manager.notify(id, notification)
+        postedIds.add(id)
     }
 
     private fun createNotificationChannel() {
@@ -101,8 +128,12 @@ class AgentActivityNotifier @Inject constructor(
 
     companion object {
         private const val CHANNEL_ID = "hermes_agent_activity"
+        private const val GROUP_AGENT = "hermes_agent_activity_group"
 
         /** Intent extra: session to resume when the notification is tapped. */
         const val EXTRA_SESSION_ID = "hermes.notification.session_id"
     }
+
+    /** Notification ids this instance posted, so [dismissAll] is surgical. */
+    private val postedIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
 }

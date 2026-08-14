@@ -217,7 +217,7 @@ internal fun SettingsMenu(
             ),
             DomainSpec(
                 title = t("Voice & Security", "صدا و امنیت"),
-                subtitle = t("Voice replies, auto-play, biometric lock", "پاسخ صوتی، پخش خودکار، قفل بیومتریک"),
+                subtitle = t("Voice replies, biometric lock, notifications", "پاسخ صوتی، قفل بیومتریک، اعلان‌ها"),
                 icon = Icons.Default.Mic,
                 onClick = { onOpen(SettingsSection.VOICE_SECURITY) },
             ),

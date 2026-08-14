@@ -30,13 +30,27 @@ import com.hermes.android.ui.theme.Hermes2Theme
 import com.hermes.android.ui.theme.ThemeModeState
 import com.hermes.android.util.AppPrefs
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
+    /**
+     * Injected so the "agent finished while you were away" notifications can
+     * be cleared the moment the user comes back to the app — their purpose
+     * was to pull the user here, so lingering in the shade is noise.
+     */
+    @Inject
+    lateinit var agentNotifier: com.hermes.android.service.AgentActivityNotifier
+
     private var biometricLock: BiometricLockManager? = null
     private var lastUnlockElapsedMs = Long.MAX_VALUE
     private var isLocked = false
+
+    override fun onStart() {
+        super.onStart()
+        agentNotifier.dismissAll()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
