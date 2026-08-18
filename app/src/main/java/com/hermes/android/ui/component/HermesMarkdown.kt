@@ -81,6 +81,9 @@ fun HermesMarkdown(
                     )
                 }
                 is MdBlock.Code -> {
+                    val highlighted = remember(block.code, block.language) {
+                        SyntaxHighlighter.highlight(block.code, block.language)
+                    }
                     Column(
                         Modifier
                             .padding(vertical = 4.dp)
@@ -89,8 +92,17 @@ fun HermesMarkdown(
                             .padding(10.dp)
                             .horizontalScroll(rememberScrollState()),
                     ) {
+                        if (block.language.isNotBlank()) {
+                            Text(
+                                text = block.language.uppercase(),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = onCode.copy(alpha = 0.6f),
+                                ),
+                                modifier = Modifier.padding(bottom = 4.dp),
+                            )
+                        }
                         Text(
-                            text = block.code,
+                            text = highlighted,
                             style = style.copy(fontFamily = FontFamily.Monospace, color = onCode),
                         )
                     }
@@ -148,7 +160,7 @@ private fun MdText(
 
 private sealed class MdBlock {
     data class Heading(val level: Int, val text: String) : MdBlock()
-    data class Code(val code: String) : MdBlock()
+    data class Code(val language: String, val code: String) : MdBlock()
     data class Quote(val text: String) : MdBlock()
     data class ListItem(val marker: String, val text: String) : MdBlock()
     data class Para(val text: String) : MdBlock()
@@ -172,12 +184,14 @@ private fun parseMarkdownBlocks(md: String): List<MdBlock> {
         val t = line.trimStart()
         when {
             t.startsWith("```") -> {
-                flush(); i++
+                flush()
+                val lang = t.removePrefix("```").trim().lowercase()
+                i++
                 val sb = StringBuilder()
                 while (i < lines.size && !lines[i].trimStart().startsWith("```")) {
                     sb.append(lines[i]).append('\n'); i++
                 }
-                out.add(MdBlock.Code(sb.toString().trimEnd('\n'))); i++
+                out.add(MdBlock.Code(language = lang, code = sb.toString().trimEnd('\n'))); i++
             }
             headingRe.matches(t) -> {
                 val m = headingRe.find(t); if (m != null) { flush(); out.add(MdBlock.Heading(m.groupValues[1].length, m.groupValues[2])); }; i++
@@ -213,6 +227,16 @@ private fun inline(text: String, linkColor: Color, codeBg: Color): AnnotatedStri
                             append(text.substring(i + 1, end))
                         }
                         i = end + 1
+                    } else { append(c); i++ }
+                }
+                // Strikethrough ~~text~~
+                c == '~' && i + 1 < text.length && text[i + 1] == '~' -> {
+                    val end = text.indexOf("~~", i + 2)
+                    if (end > i) {
+                        withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
+                            append(text.substring(i + 2, end))
+                        }
+                        i = end + 2
                     } else { append(c); i++ }
                 }
                 c == '*' && i + 1 < text.length && text[i + 1] == '*' -> {

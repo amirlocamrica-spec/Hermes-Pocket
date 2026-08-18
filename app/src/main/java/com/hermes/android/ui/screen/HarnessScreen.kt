@@ -220,7 +220,7 @@ private fun HarnessSettingsPane(
             label = { Text("Base URL") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            placeholder = { Text("https://api.xkiro.com/v1") },
+            placeholder = { Text("https://api.example.com/v1") },
         )
         OutlinedTextField(
             value = apiKey,

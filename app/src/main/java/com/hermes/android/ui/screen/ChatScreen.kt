@@ -168,7 +168,6 @@ fun ChatScreen(
     onNavigateToSessions: () -> Unit = {},
     onNavigateToTasks: () -> Unit = {},
     onNavigateToRuntime: () -> Unit = {},
-    onNavigateToXKiro: () -> Unit = {},
     sharedText: String? = null,
     resumeSessionId: String? = null,
     forceNewChat: Boolean = false,
@@ -430,10 +429,6 @@ fun ChatScreen(
                     onSettings = {
                         scope.launch { drawerState.close() }
                         onNavigateToSettings()
-                    },
-                    onXKiro = {
-                        scope.launch { drawerState.close() }
-                        onNavigateToXKiro()
                     },
                 )
 

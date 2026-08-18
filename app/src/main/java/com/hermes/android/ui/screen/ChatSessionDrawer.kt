@@ -299,7 +299,6 @@ internal fun HermesDrawerContent(
     onDeleteSession: (String) -> Unit,
     onNewChat: () -> Unit,
     onSettings: () -> Unit,
-    onXKiro: () -> Unit = {},
 ) {
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
     var overlayHeightPx by remember { mutableIntStateOf(0) }
@@ -379,31 +378,6 @@ internal fun HermesDrawerContent(
                         )
                     }
                 }
-                item(key = "drawer-xkiro") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 3.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable(onClick = onXKiro)
-                            .padding(horizontal = 14.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Text(
-                            text = "XKiro Chat",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-
                 items(filteredSessions, key = { it.id }) { session ->
                     SessionDrawerRow(
                         session = session,

@@ -34,6 +34,7 @@ sealed class ChatMessage {
         val text: String,
         val isStreaming: Boolean,
         val reasoning: String?,
+        val suggestions: List<String> = emptyList(),
     ) : ChatMessage()
 
     /** Tool call card. */
