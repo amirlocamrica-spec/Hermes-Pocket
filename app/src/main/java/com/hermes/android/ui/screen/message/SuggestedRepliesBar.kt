@@ -53,4 +53,3 @@ internal fun SuggestedRepliesBar(
     }
 }
 
-</parameter>
